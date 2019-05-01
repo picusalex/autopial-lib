@@ -5,7 +5,7 @@ import yaml
 import os
 
 class ConfigFile():
-    def __init__(self, filename, look_in_folders=["./"], logger=None):
+    def __init__(self, filename, look_in_folders=["/etc/autopial/", "./"], logger=None):
         self._config_loaded = False
         if logger is None:
             self.logger = logging.getLogger(__name__)
