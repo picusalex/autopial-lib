@@ -6,9 +6,9 @@ import logging
 import time
 import datetime
 
+import os
 import paho.mqtt.client as mqtt #import the client1
 import sys
-
 
 class AutopialWorker(threading.Thread):
     BROKER_ADDRESS = "localhost"
@@ -25,11 +25,21 @@ class AutopialWorker(threading.Thread):
         self._stopevent = threading.Event( )
         self._one_time_force = True
         self._last_publish_dates = {}
-
+        self.client_name = mqtt_client_name
         self.mqtt_connect(mqtt_client_name)
 
+    def autopial_metadata(self):
+        md = {
+            "device_uid" : str(os.environ['AUTOPIAL_UID']),
+            "device_name" : str(os.environ['AUTOPIAL_NAME']),
+            "process_name": str(os.path.basename(sys.argv[0])),
+            "worker_name": str(self.client_name)
+        }
+        return md
+
+
     def mqtt_connect(self, mqtt_client_name):
-        self.client_name = "{}-{}".format(mqtt_client_name, uuid.uuid4().hex)
+        #self.client_name = "{}-{}".format(mqtt_client_name, uuid.uuid4().hex)
         self.logger.info("Connection to MQTT broker: '{}' with name '{}'".format(self.BROKER_ADDRESS, self.client_name))
         self.mqtt_client = mqtt.Client(self.client_name)
         try:
@@ -55,11 +65,13 @@ class AutopialWorker(threading.Thread):
         if isinstance(value, dict):
             value["datetime"] = datetime.datetime.now().isoformat(' ')
             value["topic"] = topic
+            value["autopial"] = self.autopial_metadata()
         else:
             value = {
                 "topic": topic,
                 "value": value,
-                "datetime" : datetime.datetime.now().isoformat()
+                "datetime" : datetime.datetime.now().isoformat(),
+                "autopial" : self.autopial_metadata()
             }
 
         value = json.dumps(value)
@@ -83,3 +95,5 @@ class AutopialWorker(threading.Thread):
 
     def stop(self):
         self._stopevent.set( )
+
+
