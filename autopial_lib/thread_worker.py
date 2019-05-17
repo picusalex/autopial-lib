@@ -15,6 +15,7 @@ class AutopialWorker(threading.Thread):
 
     def __init__(self, mqtt_client_name, time_sleep=5, logger = None):
         threading.Thread.__init__(self)
+        self.daemon = True
         if logger is None:
             self.logger = logging.getLogger(__name__)
         else:
@@ -54,7 +55,6 @@ class AutopialWorker(threading.Thread):
         self.logger.error("Define a run() method from an inherited class of AutopialWorker")
 
     def publish(self, topic, value, ignore_timer=False):
-
         if ignore_timer is False:
             if topic not in self._last_publish_dates:
                 self._last_publish_dates[topic] = datetime.datetime.now()
@@ -87,7 +87,11 @@ class AutopialWorker(threading.Thread):
             self._one_time_force = False
         else:
             self.logger.debug("{} sleeping for {} seconds".format(self.client_name, self.time_sleep))
-            time.sleep(self.time_sleep)
+            first_dt = datetime.datetime.now()
+            dt = datetime.datetime.now()
+            while (dt - first_dt).total_seconds() < self.time_sleep and not self._stopevent.isSet():
+                time.sleep(0.2)
+                dt = datetime.datetime.now()
         return not self._stopevent.isSet()
 
     def next(self):

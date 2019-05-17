@@ -15,7 +15,7 @@ logger.addHandler(steam_handler)
 
 TORQUE_MONTHS = {
     "janv.": "01",
-    "févr": "02",
+    "févr.": "02",
     "mars": "03",
     "avr.": "04",
     "mai": "05",
@@ -31,26 +31,50 @@ def parse_date(torque_dt):
     for m in TORQUE_MONTHS:
         torque_dt = torque_dt.replace(m, TORQUE_MONTHS[m])
 
-    dt  = datetime.datetime.strptime(torque_dt+"000", "%d-%m-%Y %H:%M:%S.%f")
+    try:
+        dt  = datetime.datetime.strptime(torque_dt+"000", "%d-%m-%Y %H:%M:%S.%f")
+    except ValueError as e:
+        logger.warning(e)
+        return None
     return dt
 
+def safe_torque_value(value):
+    if value == "-":
+        return 0.0
+
+    t = safe_value(value)
+    if t != value:
+        return value
+
+    dt = parse_date(value)
+    if dt is not None:
+        return dt
+
+    return None
 
 TORQUE_MAPPER = {
     "Acceleration Sensor(Z axis)(g)": "accel_z",
     "GPS Longitude(°)": "longitude",
+    " Longitude": "longitude",
     "GPS Altitude(m)": "altitude",
+    " Altitude": "altitude",
     " Acceleration Sensor(Total)(g)": "accel_total",
     "Speed (GPS)(km/h)": "speed_gps",
+    "GPS Speed (Meters/second)": "speed_gps",
     "GPS Satellites": "number_satellites",
     "Speed (OBD)(km/h)": "speed_obd",
     "Acceleration Sensor(Y axis)(g)": "accel_y",
     "GPS Accuracy(m)": "gps_accuracy",
     "Trip Distance(km)": "trip_distance",
     "Device Time": "datetime",
+    " Device Time": "datetime",
     "Acceleration Sensor(X axis)(g)": "accel_x",
     "Engine RPM(rpm)": "rpm",
-    "GPS Bearing(°)": "orientation",
+    "GPS Bearing(°)": "direction",
+    "Bearing": "direction",
+    " Bearing": "direction",
     "GPS Latitude(°)": "latitude",
+    " Latitude": "latitude",
     "Engine Coolant Temperature(°C)": "coolant_temp",
 }
 
@@ -59,48 +83,68 @@ class TorqueFileReader():
         self.set_file(filepath)
 
     def set_file(self, filepath):
+        self.start_date = None
         if not os.path.exists(filepath):
             logger.error("Filepath '{}' does not exist !")
             return None
 
         self.filepath = filepath
+        logger.info("Loading Torque file '{}'".format(filepath))
+        self.filesize = float(os.path.getsize(filepath))
+        logger.info(" + file size: {} MB".format(round(self.filesize/1024/1024,4)))
         self.num_lines = sum(1 for line in open(filepath))
+        with open(self.filepath, newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                line = self.parse_row(row)
+                break
+        logger.info(" + start date: {}".format(self.start_date))
 
-        self.start_date = None
+    def parse_row(self, row):
+        line = {}
+        for k in row:
+            try:
+                key = TORQUE_MAPPER[k]
+            except KeyError as e:
+                #logger.debug("Invalid key: '{}'".format(k))
+                continue
+            v = row[k]
+            value = safe_torque_value(v)
+
+            if value is None:
+                return None
+
+            if key == "datetime":
+                if self.start_date is None:
+                    self.start_date = value
+                    line["timestamp"] = 0
+                else:
+                    line["timestamp"] = (value - self.start_date).total_seconds()
+
+            line[key] = value
+
+        if line["longitude"] == 0 and line["longitude"] == 0:
+            line["fix"] = 0
+        else:
+            line["fix"] = 1
+
+        return line
 
     def readline(self):
         if self.filepath is None:
             logger.error("Set valid filepath first !")
             return None
 
-        _lines = 0
         with open(self.filepath, newline='') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
-                line = {}
-                _lines = _lines + 1
-                for k in row:
-                    try:
-                        key = TORQUE_MAPPER[k]
-                    except KeyError as e:
-                        if _lines == 1 or _lines == self.num_lines-1:
-                            logger.warning("No mapping found for key: '{}'".format(k))
-                        continue
-                    value = row[k]
+                line = self.parse_row(row)
+                if line is None:
+                    logger.error("Invalid data near line {} ".format(reader.line_num))
+                    continue
 
-                    if key == "datetime":
-                        if _lines == 1:
-                            self.start_date = parse_date(value)
-                            line["timestamp"] = 0
-                        else:
-                            dt = parse_date(value)
-                            line["timestamp"] = (dt - self.start_date).total_seconds()
-                    else:
-                        line[key] = safe_value(value)
-
-                if (_lines%100) == 0:
-                    logger.debug(" * parsing line {} / {}".format(_lines, self.num_lines))
-
+                if (reader.line_num%500) == 0:
+                    logger.debug(" * parsing line {} / {}".format(reader.line_num, self.num_lines))
                 yield line
         return None
 
