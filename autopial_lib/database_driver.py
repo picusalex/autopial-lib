@@ -1,8 +1,10 @@
 import datetime
+import sys
 import threading
 
 import os
 import sqlalchemy
+from haversine import haversine
 from sqlalchemy import Column, ForeignKey, Integer, String, Float, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
@@ -17,13 +19,22 @@ class GPSLocation(Base):
     # Here we define columns for the table person
     # Notice that each column is also a normal Python instance attribute.
     id = Column(Integer, primary_key=True)
-    session_id = Column(String(32), ForeignKey('session.id'))
-    session = relationship("Session", back_populates="gps_locations")
-    latitude = Column(Float())
-    longitude = Column(Float())
-    altitude = Column(Float())
-    fix = Column(Boolean())
+    session_id = Column(String(32), ForeignKey('session.id'), nullable=False)
+    #session = relationship("Session", back_populates="gps_locations")
+    latitude = Column(Float(), nullable=False)
+    longitude = Column(Float(), nullable=False)
+    altitude = Column(Float(), nullable=False)
+    fix = Column(Boolean(), nullable=False)
     timestamp = Column(Float(), nullable=False)
+
+    def to_dict(self):
+        return {
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "altitude": self.altitude,
+            "fix": self.fix,
+            "timestamp": self.timestamp
+        }
 
 SESSION_STATUS = [
     "NOTSTARTED",
@@ -36,14 +47,25 @@ class Session(Base):
     __tablename__ = 'session'
     id = Column(String(32), primary_key=True)
     origin = Column(String(150), nullable=False)
-    start_date = Column(DateTime(), nullable=False)
     status = Column(String(32), nullable=False)
+
+    start_date = Column(DateTime(), nullable=False)
+    start_point_lat = Column(Float())
+    start_point_lon = Column(Float())
+
+    end_point_lat = Column(Float())
+    end_point_lon = Column(Float())
+    end_date = Column(DateTime())
+
+    max_speed = Column(Float())
+
     last_comm = Column(DateTime(), nullable=False)
     duration = Column(Float())
-    length = Column(Float())
-    gps_locations = relationship("GPSLocation",
-                                 order_by=GPSLocation.timestamp,
-                                 back_populates="session")
+    distance = Column(Float())
+
+    #gps_locations = relationship("GPSLocation",
+    #                             order_by=GPSLocation.timestamp,
+    #                             back_populates="session")
 
 
 class DatabaseDriver():
@@ -56,8 +78,11 @@ class DatabaseDriver():
         DBSession = sessionmaker(bind=self.dbengine)
         self.dbsession = DBSession()
 
-        if not self.dbengine.dialect.has_table(self.dbengine, "session"):
-            self.create_table()
+        try:
+            if not self.dbengine.dialect.has_table(self.dbengine, "session"):
+                self.create_table()
+        except Exception as e:
+            logger.error("SQL database error: {}".format(e))
 
     def create_table(self):
         # Create all tables in the engine. This is equivalent to "Create Table"
@@ -111,20 +136,44 @@ class DatabaseDriver():
         self.logger.info("[DATABASE] Update Autopial Session id={} metadata".format(session_uid))
         autopial_session = self.get_session(session_uid=session_uid)
         nbr_gps_location = self.dbsession.query(GPSLocation).filter_by(session_id=session_uid).count()
-        last_entry = self.dbsession.query(GPSLocation).filter_by(session_id=session_uid).order_by(GPSLocation.timestamp.desc()).first()
         autopial_session.length = nbr_gps_location
+
+        gps_entries = self.dbsession.query(GPSLocation).filter_by(session_id=session_uid).order_by(
+            GPSLocation.timestamp)
+
+        first_entry = gps_entries[0]
+        autopial_session.start_point_lat = first_entry.latitude
+        autopial_session.start_point_lon = first_entry.longitude
+
+        last_entry = gps_entries[-1]
+        autopial_session.end_point_lat = last_entry.latitude
+        autopial_session.end_point_lon = last_entry.longitude
+
         autopial_session.duration = last_entry.timestamp
+        autopial_session.end_date = autopial_session.start_date + datetime.timedelta(seconds=last_entry.timestamp)
+
+        distance = 0
+        prev_pos = (0,0)
+        for gps in gps_entries:
+            if prev_pos[0] != 0 and prev_pos[1] != 0:
+                distance = distance + haversine(prev_pos, (gps.latitude, gps.longitude))
+            prev_pos = (gps.latitude, gps.longitude)
+
+        autopial_session.distance = round(distance, 2)
         self.dbsession.commit()
 
     def print_session(self, session_uid):
         autopial_session = self.get_session(session_uid=session_uid)
         self.logger.info("########################################################")
         self.logger.info("Session '{}' terminated".format(autopial_session.id))
-        self.logger.info(" + start date: {}".format(autopial_session.start_date))
-        self.logger.info(" + origin    : {}".format(autopial_session.origin))
-        self.logger.info(" + status    : {}".format(autopial_session.status))
-        self.logger.info(" + duration  : {}".format(autopial_session.duration))
-        self.logger.info(" + length    : {}".format(autopial_session.length))
+        self.logger.info(" + start date : {}".format(autopial_session.start_date))
+        self.logger.info(" + start point: {},{}".format(autopial_session.start_point_lat,autopial_session.start_point_lon))
+        self.logger.info(" + end date   : {}".format(autopial_session.end_date))
+        self.logger.info(" + end point  : {},{}".format(autopial_session.end_point_lat, autopial_session.end_point_lon))
+        self.logger.info(" + origin     : {}".format(autopial_session.origin))
+        self.logger.info(" + status     : {}".format(autopial_session.status))
+        self.logger.info(" + duration   : {}".format(autopial_session.duration))
+        self.logger.info(" + distance   : {}".format(autopial_session.distance))
         self.logger.info("########################################################")
 
     def delete_session(self, session_uid):
@@ -140,15 +189,21 @@ class DatabaseDriver():
             return False
 
         #self.logger.debug("[DATABASE] Add GPS location to session: '{}'".format(session_uid))
-        gps_location = GPSLocation(latitude=latitude,
-                                       longitude=longitude,
-                                       altitude=altitude,
-                                       fix=fix,
-                                       timestamp=timestamp)
+        gps_location = GPSLocation( latitude=latitude,
+                                    longitude=longitude,
+                                    altitude=altitude,
+                                    fix=fix,
+                                    timestamp=timestamp,
+                                    session_id=session_uid)
         self.dbsession.add(gps_location)
-        autopial_session.gps_locations.append(gps_location)
+        #autopial_session.gps_locations.append(gps_location)
         self.dbsession.commit()
         return True
+
+    def get_gps_locations(self, session_uid):
+        gps_entries = self.dbsession.query(GPSLocation).filter_by(session_id=session_uid).order_by(
+            GPSLocation.timestamp)
+        return [gps.to_dict() for gps in gps_entries]
 
 class SessionWorker(AutopialWorker):
     def __init__(self, mqtt_client, database, logger):
