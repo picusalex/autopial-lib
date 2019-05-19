@@ -21,10 +21,10 @@ class GPSLocation(Base):
     id = Column(Integer, primary_key=True)
     session_id = Column(String(32), ForeignKey('session.id'), nullable=False)
     #session = relationship("Session", back_populates="gps_locations")
-    latitude = Column(Float(), nullable=False)
-    longitude = Column(Float(), nullable=False)
-    altitude = Column(Float(), nullable=False)
-    fix = Column(Boolean(), nullable=False)
+    latitude = Column(Float(), nullable=False, default=-1)
+    longitude = Column(Float(), nullable=False, default=-1)
+    altitude = Column(Float(), nullable=False, default=-1)
+    fix = Column(Boolean(), nullable=False, default=0)
     timestamp = Column(Float(), nullable=False)
 
     def to_dict(self):
