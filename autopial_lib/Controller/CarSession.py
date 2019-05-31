@@ -66,10 +66,25 @@ class CarSession:
         end_date = self.__start_date + datetime.timedelta(seconds=duration)
 
         last_address = None
+        min_lat = min_lon = 9999
+        max_lat = max_lon = -9999
         for t in reversed(car_datas):
-            if t["latitude"] != 0.0 and t["longitude"] != 0.0:
+            if t[ "latitude" ]:
+                if t[ "latitude" ] > max_lat: max_lat = t[ "latitude" ]
+                if t[ "latitude" ] < min_lat: min_lat = t[ "latitude" ]
+
+            if t[ "longitude" ]:
+                if t[ "longitude" ] > max_lon: max_lon = t[ "longitude" ]
+                if t[ "longitude" ] < min_lon: min_lon = t[ "longitude" ]
+
+            if t["latitude"] and t["longitude"] and last_address is None:
                 last_address = self.address(t["latitude"], t["longitude"])
-                break
+
+        max_distance = haversine((min_lat, min_lon), (max_lat, max_lon))
+        if max_distance < 1:
+            self.__logger.warning("Deleting session with too small geographical dilution ({} km)".format(round(max_distance,3)))
+            self.__db_driver.delete_session(self.__session_uid)
+            return
 
         kwargs = {
             "start_point_lat": start_point_lat,
@@ -107,11 +122,12 @@ class CarSession:
         valid_dict["longitude"] = longitude
 
 
-        if self.__prev_pos[0] != 0.0 and self.__prev_pos[1] != 0.0:
+        if self.__prev_pos[0] != 0.0 and self.__prev_pos[1] != 0.0 and latitude and longitude:
             self.__distance += haversine(self.__prev_pos, (latitude, longitude))
 
         if self.__first_address is None and latitude != 0 and longitude != 0:
             self.__first_address = self.address(latitude, longitude)
+
         self.__prev_pos = (latitude, longitude)
 
         if latitude != 0.0 and longitude != 0.0 and "fix" not in valid_dict:
@@ -126,6 +142,9 @@ class CarSession:
 
     def print_session(self):
         autopial_session = self.__db_driver.get_session(session_uid=self.__session_uid)
+        if autopial_session is None:
+            return
+
         self.__logger.info("########################################################")
         self.__logger.info("Session '{}' terminated".format(autopial_session.id))
         self.__logger.info(" + start date   : {}".format(autopial_session.start_date))
