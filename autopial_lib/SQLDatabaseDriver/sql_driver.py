@@ -1,3 +1,6 @@
+import pymysql
+pymysql.install_as_MySQLdb()
+
 import datetime
 
 from sqlalchemy.orm import relationship, sessionmaker
