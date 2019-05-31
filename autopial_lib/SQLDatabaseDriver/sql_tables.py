@@ -67,22 +67,22 @@ class Session(Base):
     status = Column(String(32), nullable=False)
 
     start_date = Column(DateTime(), nullable=False)
-    start_point_lat = Column(Float())
-    start_point_lon = Column(Float())
+    start_point_lat = Column(Float(), default=0.0)
+    start_point_lon = Column(Float(), default=0.0)
 
-    end_date = Column(DateTime())
-    end_point_lat = Column(Float())
-    end_point_lon = Column(Float())
+    end_date = Column(DateTime(), default=datetime.datetime(1970, 1, 1))
+    end_point_lat = Column(Float(), default=0.0)
+    end_point_lon = Column(Float(), default=0.0)
 
-    first_address = Column(String(250))
-    last_address = Column(String(250))
+    first_address = Column(String(250), default="")
+    last_address = Column(String(250), default="")
 
-    max_speed = Column(Float())
+    max_speed = Column(Float(), default=-1.0)
 
     last_comm = Column(DateTime(), nullable=False)
 
-    duration = Column(Float())
-    distance = Column(Float())
+    duration = Column(Float(), default=0.0)
+    distance = Column(Float(), default=0.0)
 
     def update_metadata(self):
         self.logger.info("[DATABASE] Update Autopial Session id={} metadata".format(self.id))
