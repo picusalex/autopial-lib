@@ -14,62 +14,81 @@ RESET=`tput sgr0`
 AUTOPIAL_INSTALL_DIR="`pwd`/autopial"
 
 function install-dependencies {
-    APT_PACKAGES="$1/requirements_packages"
+    MODULE_DIR=$1
+
+    APT_PACKAGES="$MODULE_DIR/requirements_packages"
     if [ -e $APT_PACKAGES ]; then
         PACKAGE_LIST=$(grep -vE "^\s*#" $APT_PACKAGES  | tr "\n" " ")
         echo -e "${YELLOW}Installing distribution packages: $PACKAGE_LIST ${RESET}"
         sudo apt-get install -y $PACKAGE_LIST
     fi
 
-    PIP_PACKAGES="$1/requirements_pip"
-    if [ -e PIP_PACKAGES ]; then
+    PIP_PACKAGES="$MODULE_DIR/requirements_pip"
+    echo "$PIP_PACKAGES"
+    if [ -e $PIP_PACKAGES ]; then
         PACKAGE_LIST=$(grep -vE "^\s*#" $PIP_PACKAGES  | tr "\n" " ")
         echo -e "${YELLOW}Installing pip packages: $PACKAGE_LIST ${RESET}"
         sudo pip install -r $PIP_PACKAGES
     fi
 }
 
+function create-supervisor-service {
+    DEST_FILE=$1
+    WORKER_NAME=$2
+    WORKER_COMMAND=$3
+    WORKER_DIR=$4
+
+    sed -e "s|\${WORKER_NAME}|$MODULE_NAME|" \
+    -e "s|\${WORKER_COMMAND}|$MODULE_COMMAND|" \
+    -e "s|\${WORKER_DIR}|$MODULE_DIR|" \
+    -e "s|\${PYTHON_PATH}|$LIBRARY_DIR|" \
+    -e "s|\${AUTOPIAL_UID}|$AUTOPIAL_UID|" \
+    -e "s|\${AUTOPIAL_NAME}|$AUTOPIAL_NAME|" \
+    "$SUPERVISOR_TEMPLATE" > $DEST_FILE
+
+    sudo mv -fv $DEST_FILE "/etc/supervisor/conf.d/$DEST_FILE"
+}
+
 echo -e "${BLUE}Welcome to the autopial installation process !!${RESET}"
-echo -e "${WHITE}Installing autopial in: $AUTOPIAL_INSTALL_DIR ${RESET}"
+echo -e "${YELLOW}Installing autopial in: $AUTOPIAL_INSTALL_DIR ${RESET}"
 
 if [ ! -d "$AUTOPIAL_INSTALL_DIR" ]; then
         mkdir -p -v $AUTOPIAL_INSTALL_DIR
 fi
 cd $AUTOPIAL_INSTALL_DIR
 
-if [ ! -e "$AUTOPIAL_INSTALL_DIR/autopial_uid" ]; then
+AUTOPIAL_UID_FILE="$AUTOPIAL_INSTALL_DIR/autopial_uid"
+if [ ! -e $AUTOPIAL_UID_FILE ]; then
         sudo apt-get install -y uuid
-        /usr/bin/uuid > "$AUTOPIAL_INSTALL_DIR/autopial_uid"
+        /usr/bin/uuid > $AUTOPIAL_UID_FILE
 fi
-AUTOPIAL_UID="`cat $AUTOPIAL_INSTALL_DIR/autopial_uid`"
-echo -e "${WHITE}Autopial UUID of this device is: $AUTOPIAL_UID ${RESET}"
+AUTOPIAL_UID="`cat $AUTOPIAL_UID_FILE`"
+echo -e "${YELLOW}Autopial UUID of this device is: $AUTOPIAL_UID ${RESET}"
 
-if [ ! -e "$AUTOPIAL_INSTALL_DIR/autopial_name" ]; then
+AUTOPIAL_NAME_FILE="$AUTOPIAL_INSTALL_DIR/autopial_name"
+if [ ! -e $AUTOPIAL_NAME_FILE ]; then
         #read -p "Please provide Autopial name for this device: " AUTOPIAL_NAME;
         #echo "$AUTOPIAL_NAME" > "$AUTOPIAL_INSTALL_DIR/autopial_name"
-        /bin/hostname > "$AUTOPIAL_INSTALL_DIR/autopial_uid"
+        /bin/hostname > $AUTOPIAL_NAME_FILE
 fi
-AUTOPIAL_NAME="`cat $AUTOPIAL_INSTALL_DIR/autopial_name`"
-echo -e "${WHITE}Autopial NAME of this device is: $AUTOPIAL_NAME ${RESET}"
+AUTOPIAL_NAME="`cat $AUTOPIAL_NAME_FILE`"
+echo -e "${YELLOW}Autopial NAME of this device is: $AUTOPIAL_NAME ${RESET}"
 
 #############################################################################################################
 echo -e "${CYAN}Step A.1: installation of mandatory dependencies${RESET}"
-read -p "Confirm installation ? [y/N]: " INSTALL_BOOL;
-if [ "$INSTALL_BOOL" == "y" ] || [ "$INSTALL_BOOL" == "Y" ]
-then
-    sudo apt-get install -y supervisor python3 python3-dev git
 
-    if [ ! -e "$AUTOPIAL_INSTALL_DIR/get-pip.py" ]; then
-        curl -v https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-        sudo python3 get-pip.py
-    fi
+sudo apt-get install -y python3 python3-dev git curl build-essential
+
+if [ ! -e "$AUTOPIAL_INSTALL_DIR/get-pip.py" ]; then
+    curl -v https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+    sudo python3 get-pip.py
 fi
 #############################################################################################################
 
 
 #############################################################################################################
 echo -e "${CYAN}Step A.2: installation of autopial library${RESET}"
-sleep 3
+sleep 1
 LIBRARY_DIR="$AUTOPIAL_INSTALL_DIR/autopial-lib"
 SUPERVISOR_TEMPLATE="$LIBRARY_DIR/supervisor_template.conf"
 
@@ -77,6 +96,7 @@ if [ -d $LIBRARY_DIR ]; then
     sudo rm -fr $LIBRARY_DIR
 fi
 git clone https://github.com/picusalex/autopial-lib.git
+
 install-dependencies $LIBRARY_DIR
 
 sudo cp -f -v "$LIBRARY_DIR/supervisord.conf" /etc/supervisor/supervisord.conf
@@ -90,21 +110,17 @@ if [ "$INSTALL_BOOL" == "y" ] || [ "$INSTALL_BOOL" == "Y" ]
 then
     MODULE_DIR="$AUTOPIAL_INSTALL_DIR/autopial-webserver"
     MODULE_SUPERVISOR="autopial-webserver.conf"
-    MODULE_COMMAND="/usr/bin/python3 $MODULE_DIR/autopial-webserver.py"
+    MODULE_COMMAND="/usr/bin/python3 autopial-webserver.py"
     MODULE_NAME="WebServer"
     if [ -d $MODULE_DIR ]; then
             rm -fr $MODULE_DIR
     fi
     git clone https://github.com/picusalex/autopial-webserver.git
-    
-    sudo pip install flask Flask-SocketIO
-    
-    cp $SUPERVISOR_TEMPLATE "$MODULE_DIR/$MODULE_SUPERVISOR"
-    sed -e "s|\${WORKER_NAME}|$MODULE_NAME|" -e "s|\${WORKER_COMMAND}|$MODULE_COMMAND|" -e "s|\${WORKER_DIR}|$MODULE_DIR|" -e "s|\${PYTHON_PATH}|$LIBRARY_DIR|" -e "s|\${AUTOPIAL_UID}|$AUTOPIAL_UID|" -e "s|\${AUTOPIAL_NAME}|$AUTOPIAL_NAME|" "$SUPERVISOR_TEMPLATE" > "$MODULE_DIR/$MODULE_SUPERVISOR"
-    sudo mv -fv "$MODULE_DIR/$MODULE_SUPERVISOR" "/etc/supervisor/conf.d/$MODULE_SUPERVISOR"  
+
+    install-dependencies $MODULE_DIR
+    create-supervisor-service $MODULE_SUPERVISOR $MODULE_NAME $MODULE_COMMAND $MODULE_DIR
 fi
 #############################################################################################################
-
 
 
 #############################################################################################################
@@ -116,19 +132,17 @@ then
     MODULE_SUPERVISOR="autopial-system.conf"
     MODULE_COMMAND="/usr/bin/python3 autopial-system.py"
     MODULE_NAME="SystemWorker"
+
     if [ -d $MODULE_DIR ]; then
-            rm -fr $MODULE_DIR
+        rm -fr $MODULE_DIR
     fi
     git clone https://github.com/picusalex/autopial-system.git
-    
-    sudo pip install psutil uptime
-    
-    cp $SUPERVISOR_TEMPLATE "$MODULE_DIR/$MODULE_SUPERVISOR"
-    sed -e "s|\${WORKER_NAME}|$MODULE_NAME|" -e "s|\${WORKER_COMMAND}|$MODULE_COMMAND|" -e "s|\${WORKER_DIR}|$MODULE_DIR|" -e "s|\${PYTHON_PATH}|$LIBRARY_DIR|" -e "s|\${AUTOPIAL_UID}|$AUTOPIAL_UID|" -e "s|\${AUTOPIAL_NAME}|$AUTOPIAL_NAME|" "$SUPERVISOR_TEMPLATE" > "$MODULE_DIR/$MODULE_SUPERVISOR"
-    sudo mv -fv "$MODULE_DIR/$MODULE_SUPERVISOR" "/etc/supervisor/conf.d/$MODULE_SUPERVISOR"   
+
+    install-dependencies $MODULE_DIR
+    create-supervisor-service $MODULE_SUPERVISOR $MODULE_NAME $MODULE_COMMAND $MODULE_DIR
+
 fi
 #############################################################################################################
-
 
 
 #############################################################################################################
@@ -140,16 +154,14 @@ then
     MODULE_SUPERVISOR="autopial-gps.conf"
     MODULE_COMMAND="/usr/bin/python3 autopial-gps.py"
     MODULE_NAME="GPSWorker"
+
     if [ -d $MODULE_DIR ]; then
             rm -fr $MODULE_DIR
     fi
     git clone https://github.com/picusalex/autopial-gps.git
-    
-    sudo pip install pyserial pynmea2
-    
-    cp $SUPERVISOR_TEMPLATE "$MODULE_DIR/$MODULE_SUPERVISOR"
-    sed -e "s|\${WORKER_NAME}|$MODULE_NAME|" -e "s|\${WORKER_COMMAND}|$MODULE_COMMAND|" -e "s|\${WORKER_DIR}|$MODULE_DIR|" -e "s|\${PYTHON_PATH}|$LIBRARY_DIR|" -e "s|\${AUTOPIAL_UID}|$AUTOPIAL_UID|" -e "s|\${AUTOPIAL_NAME}|$AUTOPIAL_NAME|" "$SUPERVISOR_TEMPLATE" > "$MODULE_DIR/$MODULE_SUPERVISOR"
-    sudo mv -fv "$MODULE_DIR/$MODULE_SUPERVISOR" "/etc/supervisor/conf.d/$MODULE_SUPERVISOR"   
+
+    install-dependencies $MODULE_DIR
+    create-supervisor-service $MODULE_SUPERVISOR $MODULE_NAME $MODULE_COMMAND $MODULE_DIR
 fi
 #############################################################################################################
 
@@ -166,14 +178,12 @@ then
             rm -fr $MODULE_DIR
     fi
     git clone https://github.com/picusalex/autopial-obd.git
-    
-    sudo pip install obd
-    
-    cp $SUPERVISOR_TEMPLATE "$MODULE_DIR/$MODULE_SUPERVISOR"
-    sed -e "s|\${WORKER_NAME}|$MODULE_NAME|" -e "s|\${WORKER_COMMAND}|$MODULE_COMMAND|" -e "s|\${WORKER_DIR}|$MODULE_DIR|" -e "s|\${PYTHON_PATH}|$LIBRARY_DIR|" -e "s|\${AUTOPIAL_UID}|$AUTOPIAL_UID|" -e "s|\${AUTOPIAL_NAME}|$AUTOPIAL_NAME|" "$SUPERVISOR_TEMPLATE" > "$MODULE_DIR/$MODULE_SUPERVISOR"
-    sudo mv -fv "$MODULE_DIR/$MODULE_SUPERVISOR" "/etc/supervisor/conf.d/$MODULE_SUPERVISOR"   
+
+    install-dependencies $MODULE_DIR
+    create-supervisor-service $MODULE_SUPERVISOR $MODULE_NAME $MODULE_COMMAND $MODULE_DIR
 fi
 #############################################################################################################
 
 sudo service supervisor restart
+sleep 1
 sudo service supervisor status

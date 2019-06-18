@@ -1,2 +1,3 @@
 paho-mqtt
+PyYAML==5.1.1
 
