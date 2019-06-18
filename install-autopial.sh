@@ -13,8 +13,23 @@ RESET=`tput sgr0`
 
 AUTOPIAL_INSTALL_DIR="`pwd`/autopial"
 
-echo -e "${BLUE}Welcome to the autopial installation process !!${RESET}"
+function install-dependencies {
+    APT_PACKAGES="$1/requirements_packages"
+    if [ -e $APT_PACKAGES ]; then
+        PACKAGE_LIST=$(grep -vE "^\s*#" $APT_PACKAGES  | tr "\n" " ")
+        echo -e "${YELLOW}Installing distribution packages: $PACKAGE_LIST ${RESET}"
+        sudo apt-get install -y $PACKAGE_LIST
+    fi
 
+    PIP_PACKAGES="$1/requirements_pip"
+    if [ -e PIP_PACKAGES ]; then
+        PACKAGE_LIST=$(grep -vE "^\s*#" $PIP_PACKAGES  | tr "\n" " ")
+        echo -e "${YELLOW}Installing pip packages: $PACKAGE_LIST ${RESET}"
+        sudo pip install -r $PIP_PACKAGES
+    fi
+}
+
+echo -e "${BLUE}Welcome to the autopial installation process !!${RESET}"
 echo -e "${WHITE}Installing autopial in: $AUTOPIAL_INSTALL_DIR ${RESET}"
 
 if [ ! -d "$AUTOPIAL_INSTALL_DIR" ]; then
@@ -27,11 +42,12 @@ if [ ! -e "$AUTOPIAL_INSTALL_DIR/autopial_uid" ]; then
         /usr/bin/uuid > "$AUTOPIAL_INSTALL_DIR/autopial_uid"
 fi
 AUTOPIAL_UID="`cat $AUTOPIAL_INSTALL_DIR/autopial_uid`"
-echo -e "${WHITE}Autopial UID of this device is: $AUTOPIAL_UID ${RESET}"
+echo -e "${WHITE}Autopial UUID of this device is: $AUTOPIAL_UID ${RESET}"
 
 if [ ! -e "$AUTOPIAL_INSTALL_DIR/autopial_name" ]; then
-        read -p "Please provide Autopial name for this device: " AUTOPIAL_NAME;
-        echo "$AUTOPIAL_NAME" > "$AUTOPIAL_INSTALL_DIR/autopial_name"
+        #read -p "Please provide Autopial name for this device: " AUTOPIAL_NAME;
+        #echo "$AUTOPIAL_NAME" > "$AUTOPIAL_INSTALL_DIR/autopial_name"
+        /bin/hostname > "$AUTOPIAL_INSTALL_DIR/autopial_uid"
 fi
 AUTOPIAL_NAME="`cat $AUTOPIAL_INSTALL_DIR/autopial_name`"
 echo -e "${WHITE}Autopial NAME of this device is: $AUTOPIAL_NAME ${RESET}"
@@ -41,14 +57,13 @@ echo -e "${CYAN}Step A.1: installation of mandatory dependencies${RESET}"
 read -p "Confirm installation ? [y/N]: " INSTALL_BOOL;
 if [ "$INSTALL_BOOL" == "y" ] || [ "$INSTALL_BOOL" == "Y" ]
 then
-    sudo apt-get install -y supervisor redis-server mosquitto python3 python3-dev git
+    sudo apt-get install -y supervisor python3 python3-dev git
 
     if [ ! -e "$AUTOPIAL_INSTALL_DIR/get-pip.py" ]; then
         curl -v https://bootstrap.pypa.io/get-pip.py -o get-pip.py
         sudo python3 get-pip.py
     fi
-    sudo pip install redis paho-mqtt pyyaml
-fi    
+fi
 #############################################################################################################
 
 
@@ -59,19 +74,12 @@ LIBRARY_DIR="$AUTOPIAL_INSTALL_DIR/autopial-lib"
 SUPERVISOR_TEMPLATE="$LIBRARY_DIR/supervisor_template.conf"
 
 if [ -d $LIBRARY_DIR ]; then
-        sudo rm -fr $LIBRARY_DIR
+    sudo rm -fr $LIBRARY_DIR
 fi
 git clone https://github.com/picusalex/autopial-lib.git
+install-dependencies $LIBRARY_DIR
 
 sudo cp -f -v "$LIBRARY_DIR/supervisord.conf" /etc/supervisor/supervisord.conf
-
-PYTHON_PATH=`python3 -m site --user-site`
-PYTHON_AUTOPIAL="$PYTHON_PATH/autopial.pth"
-if [ ! -e $PYTHON_PATH ]; then
-        mkdir -p -v $PYTHON_PATH
-fi
-echo "$MODULE_DIR" > $PYTHON_AUTOPIAL
-
 #############################################################################################################
 
 
