@@ -62,4 +62,5 @@ class ConfigFile():
                 raise BaseException("Key path '{}' is incomplete. Please provide an additional key".format(":".join(kargs)))
             else:
                 return default
+        self.logger.debug("Config: {} = {}".format(kargs, v))
         return v

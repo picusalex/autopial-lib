@@ -21,7 +21,7 @@ TORQUE_MONTHS = {
     "mai": "05",
     "juin": "06",
     "juil.": "07",
-    "août.": "08",
+    "août": "08",
     "sept.": "09",
     "oct.": "10",
     "nov.": "11",
@@ -82,7 +82,10 @@ TORQUE_MAPPER = {
     "GPS Latitude(°)": "latitude",
     " Latitude": "latitude",
     "Engine Coolant Temperature(°C)": "coolant_temp",
-    "Engine Oil Temperature(°C)": "oil_temp"
+    "Engine Oil Temperature(°C)": "oil_temp",
+    " G(y)": "accel_y",
+    " G(z)": "accel_z",
+    " G(x)": "accel_x"
 }
 
 
